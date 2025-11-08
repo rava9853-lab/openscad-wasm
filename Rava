@@ -1,0 +1,99 @@
+// Part generated from provided drawing (approximate, mm).
+// Assumptions (based on the drawing and confirmations):
+// - Overall dimensions: length = 140, width = 80, height = 65 (mm).
+// - Central square hole: 40 x 40, сквозное (центр по X и Y).
+// - Two circular holes: Ø30 (радиус 15), сквозные, расположены по X = ±35 mm от центра, центр по Y и по Z = mid-height.
+// - Фаска на Ø30: реализована как конический усечённый конус длиной 2 mm (2x45°) на обоих торцах.
+// - Призма/наклонная грань восстановлена упрощённо как наклонная вырезка слева.
+// - Модель ориентирована так, что X — длина (140), Y — ширина (80), Z — высота (65).
+
+// Параметры (легко редактировать)
+length = 140;
+width  = 80;
+height = 65;
+
+sq = 40;            // размер квадратного отверстия
+hole_d = 30;
+hole_r = hole_d/2;
+hole_x_offset = 35; // позиция отверстий по X (от центра)
+chamfer_depth = 2;  // глубина фаски 2 mm (под 45° приблизительно)
+
+$fn = 128; // детализация кругов
+
+module main_block() {
+    translate([ -length/2, -width/2, -height/2 ])
+        cube([ length, width, height ], center=false);
+}
+
+// сквозное квадратное отверстие (вдоль Y): сделаем как палка по Y высотой > width
+module square_cut() {
+    translate([ -sq/2, -width/2 - 2, -height/2 ])
+        cube([ sq, width + 4, height + 4 ], center=false);
+}
+
+// цилиндр сквозной вдоль Y (т.е. ось по Y)
+module cyl_cut(xpos=0) {
+    // основной цилиндр (достаточная длина по Y)
+    translate([ xpos, 0, 0 ]) rotate([90,0,0])
+        cylinder(h = width + 4, r = hole_r, center = true, $fn = $fn);
+    // фаска (усечённый конус) с каждой стороны по Z - реализуем как конус, ориентированный по Z и смещённый
+    // для простоты сделаем усечённый конус, примешаем как вычитаемая фигура, чтобы получить 45°
+    // т.к. цилиндр идёт по Y, фаску делаем на входной/выходной кромке по Z
+}
+
+// для фаски мы создадим небольшой конический вырез около стенки (симуляция 2x45°):
+module chamfer_z(xpos=0, z_sign=1) {
+    // z_sign = +1 для верхней кромки, -1 для нижней
+    translate([ xpos, 0, (z_sign)*(height/2 + chamfer_depth/2) ])
+        rotate([0,0,0])
+        // тонкий конус, радиус чуть больше отверстия
+        rotate([90,0,0]) // ориентируем ось конуса вдоль Z
+            cylinder(h = chamfer_depth, r1 = hole_r + chamfer_depth, r2 = hole_r, center = true, $fn = $fn);
+}
+
+// упрощённая наклонная призма слева (визуально как на чертеже)
+// сделаем её как призматический вырез/добавку; здесь — добавка (union)
+module left_prism() {
+    // треугольная призма: сделаем полигон и экструдируем вдоль Z
+    points = [ [0,0], [1,0], [1,1] ];
+    // масштабируем и размещаем
+    translate([ -length*0.35, -width*0.45, -height/2 ])
+        linear_extrude(height = height)
+            polygon(points = [ [0,0], [60,0], [60,40] ]);
+}
+
+// дополнительные внутренние круглые вырезы (по виду) — сложные пазовые формы.
+// Для надёжной печати мне лучше оставить их упрощёнными (полукруги вырезаны в боковой стенке).
+module internal_round_cut(xpos=0, zpos=-10) {
+    // вырез полукругом (простой): цилиндр половинной высоты, смещён по Z
+    translate([ xpos, 0, zpos ])
+        rotate([90,0,0])
+            cylinder(h = width + 4, r = 20, center = true, $fn = $fn);
+}
+
+// Собираем модель: main - square - 2*cyl + chamfers + union left_prism (как добавка)
+difference() {
+    union() {
+        main_block();
+        // добавим левую призму (как выступ)
+        left_prism();
+    }
+
+    // вырезы:
+    // центральный квадрат (сквозной)
+    square_cut();
+
+    // два цилиндрических выреза
+    translate([ hole_x_offset, 0, 0 ]) rotate([90,0,0]) cylinder(h = width + 4, r = hole_r, center = true, $fn = $fn);
+    translate([ -hole_x_offset, 0, 0 ]) rotate([90,0,0]) cylinder(h = width + 4, r = hole_r, center = true, $fn = $fn);
+
+    // фаски (по одной стороне верх/низ)
+    chamfer_z(hole_x_offset, 1);
+    chamfer_z(hole_x_offset, -1);
+    chamfer_z(-hole_x_offset, 1);
+    chamfer_z(-hole_x_offset, -1);
+
+    // пример внутренних полукруглых вырезов (упрощение)
+    internal_round_cut(hole_x_offset, -10);
+    internal_round_cut(-hole_x_offset, -10);
+}
